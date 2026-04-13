@@ -75,12 +75,12 @@ public partial class PdfViewHandler : ViewHandler<PdfView, PDFView>
     {
         base.ConnectHandler(platformView);
 
-        // Apply initial values
-        MapSource(this, VirtualView);
+        // Apply all config properties BEFORE Source so the document loads with the correct settings.
         MapEnableZoom(this, VirtualView);
         MapEnableSwipe(this, VirtualView);
         MapEnableTapGestures(this, VirtualView);
         MapEnableLinkNavigation(this, VirtualView);
+        MapZoom(this, VirtualView);
         MapMinZoom(this, VirtualView);
         MapMaxZoom(this, VirtualView);
         MapPageSpacing(this, VirtualView);
@@ -91,6 +91,9 @@ public partial class PdfViewHandler : ViewHandler<PdfView, PDFView>
         MapEnableAntialiasing(this, VirtualView);
         MapUseBestQuality(this, VirtualView);
         MapBackgroundColor(this, VirtualView);
+        MapEnableAnnotationRendering(this, VirtualView);
+        // Source is applied last so LoadDocument() picks up all pre-configured properties.
+        MapSource(this, VirtualView);
     }
 
     protected override void DisconnectHandler(PDFView platformView)

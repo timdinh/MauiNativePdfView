@@ -10,7 +10,7 @@ namespace MauiNativePdfView.Platforms.iOS;
 /// </summary>
 public class PdfViewiOS : IPdfView, IDisposable
 {
-    private readonly PdfKit.PdfView _pdfView;
+    private readonly NativePdfView _pdfView;
     private PdfSource? _source;
     private bool _disposed;
     private NSObject? _pageChangedObserver;
@@ -21,14 +21,23 @@ public class PdfViewiOS : IPdfView, IDisposable
     private bool _documentLoaded = false;
     private bool _enableAnnotationRendering = true;
     private bool _enableTapGestures = true;
+    private FitPolicy _fitPolicy = FitPolicy.Width;
+    private bool _needsFitReapply = false;
 
     public PdfViewiOS()
     {
-        _pdfView = new PdfKit.PdfView
+        _pdfView = new NativePdfView
         {
             AutoScales = true,
             DisplayMode = PdfKit.PdfDisplayMode.SinglePageContinuous,
             DisplayDirection = PdfDisplayDirection.Vertical
+        };
+
+        // Re-apply deferred fit policy once the view has been laid out and has real bounds.
+        _pdfView.LayoutSubviewsAction = () =>
+        {
+            if (_needsFitReapply)
+                ApplyFitPolicy();
         };
 
         // Subscribe to page change notifications
@@ -146,24 +155,79 @@ public class PdfViewiOS : IPdfView, IDisposable
 
     public FitPolicy FitPolicy
     {
-        get => _pdfView.AutoScales ? FitPolicy.Width : FitPolicy.Both;
+        get => _fitPolicy;
         set
         {
-            switch (value)
-            {
-                case FitPolicy.Width:
-                    _pdfView.AutoScales = true;
-                    _pdfView.DisplayMode = PdfKit.PdfDisplayMode.SinglePageContinuous;
-                    break;
-                case FitPolicy.Height:
-                    _pdfView.AutoScales = true;
-                    _pdfView.DisplayMode = PdfKit.PdfDisplayMode.SinglePage;
-                    break;
-                case FitPolicy.Both:
-                    _pdfView.AutoScales = false;
-                    break;
-            }
+            _fitPolicy = value;
+            ApplyFitPolicy();
         }
+    }
+
+    private void ApplyFitPolicy()
+    {
+        switch (_fitPolicy)
+        {
+            case FitPolicy.Width:
+                _pdfView.AutoScales = true;
+                _pdfView.DisplayMode = PdfKit.PdfDisplayMode.SinglePageContinuous;
+                _needsFitReapply = false;
+                break;
+
+            case FitPolicy.Height:
+                // PdfKit AutoScales only fits width; calculate scale manually.
+                _pdfView.AutoScales = false;
+                _pdfView.DisplayMode = PdfKit.PdfDisplayMode.SinglePageContinuous;
+                _needsFitReapply = !SetManualScale(fitWidth: false, fitHeight: true);
+                break;
+
+            case FitPolicy.Both:
+                // Fit to the smaller of the width/height scale factors so the whole page
+                // is visible. Use SinglePageContinuous to avoid SinglePage's inflated
+                // internal scroll content size.
+                _pdfView.AutoScales = false;
+                _pdfView.DisplayMode = PdfKit.PdfDisplayMode.SinglePageContinuous;
+                _needsFitReapply = !SetManualScale(fitWidth: true, fitHeight: true);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Computes and applies ScaleFactor so the current page fits the requested axes.
+    /// Returns <c>true</c> on success, <c>false</c> if the view or page isn't ready yet
+    /// (caller should set <see cref="_needsFitReapply"/> and retry on next layout pass).
+    /// </summary>
+    private bool SetManualScale(bool fitWidth, bool fitHeight)
+    {
+        var page = _pdfView.CurrentPage;
+        if (page == null)
+            return false;
+
+        var viewBounds = _pdfView.Bounds;
+        if (viewBounds.Width <= 0 || viewBounds.Height <= 0)
+            return false;
+
+        var pageRect = page.GetBoundsForBox(PdfDisplayBox.Media);
+        if (pageRect.Width <= 0 || pageRect.Height <= 0)
+            return false;
+
+        nfloat scale;
+        if (fitWidth && fitHeight)
+        {
+            var scaleW = (nfloat)(viewBounds.Width / pageRect.Width);
+            var scaleH = (nfloat)(viewBounds.Height / pageRect.Height);
+            scale = scaleW < scaleH ? scaleW : scaleH;
+        }
+        else if (fitHeight)
+        {
+            scale = (nfloat)(viewBounds.Height / pageRect.Height);
+        }
+        else
+        {
+            scale = (nfloat)(viewBounds.Width / pageRect.Width);
+        }
+
+        _pdfView.ScaleFactor = scale;
+        return true;
     }
 
     public Abstractions.PdfDisplayMode DisplayMode
@@ -358,7 +422,13 @@ public class PdfViewiOS : IPdfView, IDisposable
                     }
                 }
 
-                MainThread.BeginInvokeOnMainThread(() => _pdfView.Document = document);
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    _pdfView.Document = document;
+                    // Re-apply fit policy now that the document is loaded and
+                    // the view has valid bounds to calculate scale against.
+                    ApplyFitPolicy();
+                });
 
                 // Get document metadata
                 var pageCount = (int)document.PageCount;
@@ -551,6 +621,22 @@ public class PdfViewiOS : IPdfView, IDisposable
 
         _pdfView.WeakDelegate = null;
         _pdfView?.Dispose();
+    }
+
+    /// <summary>
+    /// Custom PdfView subclass that fires a callback on each layout pass, allowing
+    /// <see cref="PdfViewiOS"/> to defer fit-policy scale calculations until the view
+    /// has non-zero bounds (which isn't guaranteed when the document first loads).
+    /// </summary>
+    private class NativePdfView : PdfKit.PdfView
+    {
+        internal Action? LayoutSubviewsAction { get; set; }
+
+        public override void LayoutSubviews()
+        {
+            base.LayoutSubviews();
+            LayoutSubviewsAction?.Invoke();
+        }
     }
 
     /// <summary>
