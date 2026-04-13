@@ -44,7 +44,7 @@
         </ResourceDictionary>
     </ContentPage.Resources>
 
-    <ScrollView BackgroundColor="{StaticResource SurfaceColor}">
+       <ScrollView BackgroundColor="{StaticResource SurfaceColor}">
         <VerticalStackLayout Spacing="20"
                              Padding="20,20,20,32">
             <!-- Lean hero copy so phones see controls immediately -->
@@ -157,7 +157,7 @@
                         </Border.StrokeShape>
                         <pdf:PdfView x:Name="PdfViewer"
                                      Source="sample.pdf"
-                                     HeightRequest="460"
+                                     HeightRequest="200"
                                      HorizontalOptions="FillAndExpand"
                                      VerticalOptions="FillAndExpand"
                                      EnableZoom="True"
@@ -165,6 +165,7 @@
                                      EnableTapGestures="False"
                                      PageSpacing="10"
                                      EnableAntialiasing="True"
+                                     FitPolicy="Height"
                                      UseBestQuality="True"
                                      EnableAnnotationRendering="True"
                                      DocumentLoaded="OnDocumentLoaded"
@@ -240,6 +241,17 @@
                                 Grid.Column="1"/>
                     </Grid>
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                        <Label Text="Fit policy"
+                               TextColor="#CBD5F5"
+                               VerticalOptions="Center"
+                               Grid.Column="0"/>
+                        <Button x:Name="ToggleFitPolicyButton"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Text="Height"
+                                Clicked="OnToggleFitPolicyClicked"
+                                Grid.Column="1"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                         <Label Text="Tap gestures"
                                TextColor="#CBD5F5"
                                VerticalOptions="Center"
@@ -307,5 +319,5 @@
                 </VerticalStackLayout>
             </toolkit:Expander>
         </VerticalStackLayout>
-    </ScrollView>
+     </ScrollView>
 </ContentPage>

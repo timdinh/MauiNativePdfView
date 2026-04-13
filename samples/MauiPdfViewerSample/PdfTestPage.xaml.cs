@@ -14,6 +14,21 @@ public partial class PdfTestPage : ContentPage
         Colors.Beige
     };
 
+    // Start at Height to match the XAML default (FitPolicy="Height")
+    private int _fitPolicyIndex = 1;
+    private readonly FitPolicy[] _fitPolicies = new[]
+    {
+        FitPolicy.Width,
+        FitPolicy.Height,
+        FitPolicy.Both
+    };
+    private readonly string[] _fitPolicyNames = new[]
+    {
+        "Width",
+        "Height",
+        "Both"
+    };
+
     private int _displayModeIndex = 0;
     private readonly PdfDisplayMode[] _displayModes = new[]
     {
@@ -138,6 +153,14 @@ public partial class PdfTestPage : ContentPage
         _backgroundColorIndex = (_backgroundColorIndex + 1) % _backgroundColors.Length;
         PdfViewer.BackgroundColor = _backgroundColors[_backgroundColorIndex];
         StatusLabel.Text = $"Background color: {_backgroundColors[_backgroundColorIndex]}";
+    }
+
+    private void OnToggleFitPolicyClicked(object? sender, EventArgs e)
+    {
+        _fitPolicyIndex = (_fitPolicyIndex + 1) % _fitPolicies.Length;
+        PdfViewer.FitPolicy = _fitPolicies[_fitPolicyIndex];
+        ToggleFitPolicyButton.Text = _fitPolicyNames[_fitPolicyIndex];
+        StatusLabel.Text = $"Fit policy: {_fitPolicyNames[_fitPolicyIndex]}";
     }
 
     // New Phase 5 event handler

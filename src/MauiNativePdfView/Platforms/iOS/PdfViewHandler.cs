@@ -67,10 +67,9 @@ public partial class PdfViewHandler : ViewHandler<PdfView, PdfKit.PdfView>
     {
         base.ConnectHandler(platformView);
 
-        // Apply initial property values
+        // Apply all config properties BEFORE Source so the document loads with the correct settings.
         if (_pdfViewWrapper != null && VirtualView != null)
         {
-            _pdfViewWrapper.Source = VirtualView.Source;
             _pdfViewWrapper.EnableZoom = VirtualView.EnableZoom;
             _pdfViewWrapper.EnableSwipe = VirtualView.EnableSwipe;
             _pdfViewWrapper.EnableTapGestures = VirtualView.EnableTapGestures;
@@ -79,13 +78,16 @@ public partial class PdfViewHandler : ViewHandler<PdfView, PdfKit.PdfView>
             _pdfViewWrapper.MinZoom = VirtualView.MinZoom;
             _pdfViewWrapper.MaxZoom = VirtualView.MaxZoom;
             _pdfViewWrapper.PageSpacing = VirtualView.PageSpacing;
-            _pdfViewWrapper.FitPolicy = VirtualView.FitPolicy;
             _pdfViewWrapper.DisplayMode = VirtualView.DisplayMode;
             _pdfViewWrapper.ScrollOrientation = VirtualView.ScrollOrientation;
             _pdfViewWrapper.DefaultPage = VirtualView.DefaultPage;
             _pdfViewWrapper.EnableAntialiasing = VirtualView.EnableAntialiasing;
             _pdfViewWrapper.UseBestQuality = VirtualView.UseBestQuality;
             _pdfViewWrapper.BackgroundColor = VirtualView.BackgroundColor;
+            // FitPolicy modifies DisplayMode internally, so it must be applied after DisplayMode.
+            _pdfViewWrapper.FitPolicy = VirtualView.FitPolicy;
+            // Source is applied last so LoadDocument() picks up all pre-configured properties.
+            _pdfViewWrapper.Source = VirtualView.Source;
         }
     }
 
