@@ -336,37 +336,36 @@ public class PdfViewiOS : IPdfView, IDisposable
     }
 
     /// <summary>
-    /// PdfKit centers a single short page vertically inside its inner UIScrollView.
-    /// To force top alignment we set the scroll view's bottom content inset to the
-    /// remaining vertical space so the page no longer needs to be centered.
-    /// For <see cref="PageAlignment.Default"/> and <see cref="PageAlignment.Center"/>
-    /// we leave PdfKit's defaults untouched.
+    /// PdfKit centers a short page by setting the inner PDFDocumentView's frame.Y
+    /// to <c>(scrollView.Bounds.Height - pageHeight) / 2</c> on every layout pass.
+    /// To pin the page to the top we walk the subview tree to find that document
+    /// view and overwrite its frame's Y origin to 0. This must re-run on every
+    /// layout pass because PdfKit re-applies its centering each time.
+    ///
+    /// HACK: relies on PdfKit's internal subview structure (UIScrollView > PDFDocumentView).
+    /// Verified against iOS 16/17; revisit if PdfKit restructures.
     /// </summary>
     private void ApplyPageAlignment()
     {
+        if (_pageAlignment != PageAlignment.Top)
+            return;
+
         var scrollView = FindInnerScrollView(_pdfView);
-        if (scrollView == null)
+        var documentView = FindDocumentView(scrollView);
+        if (scrollView == null || documentView == null)
             return;
 
         var viewHeight = scrollView.Bounds.Height;
-        var contentHeight = scrollView.ContentSize.Height;
-        if (viewHeight <= 0 || contentHeight <= 0)
-            return;
+        var pageHeight = documentView.Frame.Height;
+        if (viewHeight <= 0 || pageHeight <= 0 || pageHeight >= viewHeight)
+            return; // content fills/exceeds viewport — nothing to align.
 
-        var defaultInset = new UIEdgeInsets(0, scrollView.ContentInset.Left, 0, scrollView.ContentInset.Right);
+        var frame = documentView.Frame;
+        if (frame.Y == 0)
+            return; // already aligned to top this pass.
 
-        if (_pageAlignment != PageAlignment.Top || contentHeight >= viewHeight)
-        {
-            // Restore platform defaults if we previously modified them.
-            if (scrollView.ContentInset.Top != 0 || scrollView.ContentInset.Bottom != 0)
-                scrollView.ContentInset = defaultInset;
-            return;
-        }
-
-        // Add padding below the content so the page sits at the top. We also pin
-        // the content offset to the top in case PdfKit had already scrolled to center.
-        var slack = viewHeight - contentHeight;
-        scrollView.ContentInset = new UIEdgeInsets(0, defaultInset.Left, slack, defaultInset.Right);
+        documentView.Frame = new CoreGraphics.CGRect(frame.X, 0, frame.Width, frame.Height);
+        // Reset scroll offset so the visible top of the page is at the viewport's top edge.
         scrollView.ContentOffset = new CoreGraphics.CGPoint(scrollView.ContentOffset.X, -scrollView.AdjustedContentInset.Top);
     }
 
@@ -382,6 +381,34 @@ public class PdfViewiOS : IPdfView, IDisposable
                 return found;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Locate PdfKit's PDFDocumentView — the direct child of the inner UIScrollView
+    /// that hosts the rendered page(s). Identified by being the largest non-scroll-view
+    /// subview, which is more robust than matching against a class name that PdfKit
+    /// could change between iOS versions.
+    /// </summary>
+    private static UIView? FindDocumentView(UIScrollView? scrollView)
+    {
+        if (scrollView == null)
+            return null;
+
+        UIView? best = null;
+        nfloat bestArea = 0;
+        foreach (var sub in scrollView.Subviews)
+        {
+            if (sub is UIScrollView)
+                continue;
+
+            var area = sub.Frame.Width * sub.Frame.Height;
+            if (area > bestArea)
+            {
+                bestArea = area;
+                best = sub;
+            }
+        }
+        return best;
     }
 
     public event EventHandler<DocumentLoadedEventArgs>? DocumentLoaded;

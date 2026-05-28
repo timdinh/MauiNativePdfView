@@ -268,19 +268,72 @@ public class PdfViewAndroid : IPdfView, IDisposable
     }
 
     /// <summary>
-    /// AhmerPdfium centers a page that is shorter than the viewport. For
-    /// <see cref="PageAlignment.Top"/> we scroll the view to (0, 0) after
-    /// load so the page sits flush with the top of the viewport.
+    /// AhmerPdfium clamps the scroll offset to keep a short page vertically centered
+    /// in the viewport, so <c>MoveTo(0, 0)</c> doesn't stick. Instead, when
+    /// <see cref="PageAlignment.Top"/> is requested we shrink the native view's
+    /// layout height to exactly the rendered page height — once the viewport matches
+    /// the page, the library's centering math has zero slack to consume and MAUI's
+    /// parent layout naturally places the (now-shorter) PDFView at the top of its
+    /// allocated space. For <see cref="PageAlignment.Default"/> and
+    /// <see cref="PageAlignment.Center"/> we restore MATCH_PARENT.
     /// </summary>
     private void ApplyPageAlignment()
     {
-        if (_pageAlignment != PageAlignment.Top)
+        _pdfView.Post(ApplyPageAlignmentOnUiThread);
+    }
+
+    private void ApplyPageAlignmentOnUiThread()
+    {
+        var lp = _pdfView.LayoutParameters;
+        if (lp == null)
             return;
 
-        // Run on the UI thread once layout has settled. MoveTo with animation = false
-        // jumps without smoothing; the library re-clamps the offset if content is
-        // larger than the viewport, so this is a no-op for tall documents.
-        _pdfView.Post(() => _pdfView.MoveTo(0f, 0f, false));
+        if (_pageAlignment != PageAlignment.Top || _pageCount == 0)
+        {
+            if (lp.Height != global::Android.Views.ViewGroup.LayoutParams.MatchParent)
+            {
+                lp.Height = global::Android.Views.ViewGroup.LayoutParams.MatchParent;
+                _pdfView.LayoutParameters = lp;
+            }
+            return;
+        }
+
+        // Use the current page; for most short-PDF cases there is only one.
+        int pageIndex = _currentPage >= 0 && _currentPage < _pageCount ? _currentPage : 0;
+        var pageSize = _pdfView.GetPageSize(pageIndex);
+        if (pageSize == null || pageSize.Width <= 0 || pageSize.Height <= 0)
+            return;
+
+        int viewportWidth = _pdfView.Width;
+        int viewportHeight = _pdfView.Height;
+        if (viewportWidth <= 0 || viewportHeight <= 0)
+            return;
+
+        // Compute the rendered height for the current fit policy.
+        float scale = _fitPolicy switch
+        {
+            Abstractions.FitPolicy.Height => viewportHeight / pageSize.Height,
+            Abstractions.FitPolicy.Both => Math.Min(viewportWidth / pageSize.Width, viewportHeight / pageSize.Height),
+            _ => viewportWidth / pageSize.Width,
+        };
+        int renderedHeight = (int)Math.Ceiling(pageSize.Height * scale * _pdfView.Zoom);
+
+        if (renderedHeight <= 0 || renderedHeight >= viewportHeight)
+        {
+            // Page already fills or exceeds the viewport — no centering happening, leave alone.
+            if (lp.Height != global::Android.Views.ViewGroup.LayoutParams.MatchParent)
+            {
+                lp.Height = global::Android.Views.ViewGroup.LayoutParams.MatchParent;
+                _pdfView.LayoutParameters = lp;
+            }
+            return;
+        }
+
+        if (lp.Height != renderedHeight)
+        {
+            lp.Height = renderedHeight;
+            _pdfView.LayoutParameters = lp;
+        }
     }
 
     public event EventHandler<DocumentLoadedEventArgs>? DocumentLoaded;
